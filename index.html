@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIB Neuralyzer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            color: #fff;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Текст инструкции */
+        .instruction {
+            margin-bottom: 20px;
+            color: #888;
+            font-size: 14px;
+            text-align: center;
+            opacity: 0.7;
+        }
+
+        /* Рисуем Нейрализатор с помощью CSS (можно заменить на картинку <img>) */
+        .neuralyzer-container {
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .neuralyzer-container:active {
+            transform: scale(0.98);
+        }
+
+        /* Корпус */
+        .stick {
+            width: 60px;
+            height: 300px;
+            background: linear-gradient(90deg, #555, #ccc, #555);
+            border-radius: 10px;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.1);
+        }
+
+        /* Верхняя часть (лампа) */
+        .top-light {
+            width: 40px;
+            height: 60px;
+            background: #300;
+            border: 2px solid #888;
+            margin: 0 auto;
+            position: relative;
+            top: 10px;
+            border-radius: 5px;
+            transition: background 0.1s;
+        }
+
+        /* Красный индикатор сзади */
+        .red-light {
+            width: 10px;
+            height: 10px;
+            background-color: red;
+            border-radius: 50%;
+            position: absolute;
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            box-shadow: 0 0 5px red;
+            animation: pulse 2s infinite;
+        }
+
+        /* Белая вспышка на весь экран */
+        #white-flash {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: white;
+            opacity: 0;
+            pointer-events: none; /* Чтобы клики проходили сквозь */
+            z-index: 9999;
+        }
+
+        /* Анимация пульсации индикатора */
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; box-shadow: 0 0 15px red; }
+            100% { opacity: 0.5; }
+        }
+
+        /* Кнопка запуска (для запроса прав) */
+        #permission-btn {
+            position: absolute;
+            bottom: 20px;
+            padding: 10px 20px;
+            background: #222;
+            border: 1px solid #444;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="instruction">Посмотрите на устройство и нажмите на него...</div>
+
+    <div class="neuralyzer-container" id="neuralyzer">
+        <div class="stick">
+            <div class="top-light" id="bulb"></div>
+            <div class="red-light"></div>
+            <div style="width:100%; height:2px; background:#333; position:absolute; bottom:100px;"></div>
+            <div style="width:100%; height:2px; background:#333; position:absolute; bottom:110px;"></div>
+        </div>
+    </div>
+
+    <div id="white-flash"></div>
+
+    <button id="permission-btn">Разрешить доступ к вспышке</button>
+
+    <script>
+        const neuralyzer = document.getElementById('neuralyzer');
+        const flashOverlay = document.getElementById('white-flash');
+        const bulb = document.getElementById('bulb');
+        const permBtn = document.getElementById('permission-btn');
+        
+        let videoTrack = null;
+
+        // 1. Функция инициализации камеры (для доступа к фонарику)
+        async function initCamera() {
+            try {
+                // Запрашиваем доступ к камере (задней)
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" }
+                });
+                
+                videoTrack = stream.getVideoTracks()[0];
+                
+                // Проверяем, есть ли фонарик
+                const capabilities = videoTrack.getCapabilities();
+                if (!capabilities.torch) {
+                    alert("Вспышка не поддерживается на этом устройстве, но экран мигнет.");
+                    videoTrack = null;
+                } else {
+                    permBtn.style.display = 'none'; // Скрываем кнопку, если права получены
+                    alert("Нейрализатор готов. Нажмите на устройство.");
+                }
+
+            } catch (err) {
+                console.error("Ошибка доступа к камере:", err);
+                alert("Не удалось получить доступ к вспышке. Проверьте разрешения сайта и HTTPS.");
+            }
+        }
+
+        // 2. Функция вспышки
+        async function triggerFlash() {
+            // А. Визуальная вспышка на экране
+            flashOverlay.style.transition = 'none';
+            flashOverlay.style.opacity = '1';
+            bulb.style.background = '#fff';
+            bulb.style.boxShadow = '0 0 50px 20px white';
+
+            // Б. Аппаратная вспышка (фонарик)
+            if (videoTrack) {
+                try {
+                    await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
+                } catch (e) { console.error(e); }
+            }
+
+            // В. Затухание через короткое время
+            setTimeout(async () => {
+                // Выключаем экран
+                flashOverlay.style.transition = 'opacity 1.5s ease-out';
+                flashOverlay.style.opacity = '0';
+                
+                // Возвращаем лампочку в норму
+                bulb.style.background = '#300';
+                bulb.style.boxShadow = 'none';
+
+                // Выключаем фонарик
+                if (videoTrack) {
+                    try {
+                        await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
+                    } catch (e) { console.error(e); }
+                }
+            }, 200); // Длительность вспышки 200мс
+        }
+
+        // Обработчики событий
+        permBtn.addEventListener('click', initCamera);
+        
+        neuralyzer.addEventListener('click', () => {
+            triggerFlash();
+            // Тут можно добавить звук, если есть файл
+            // new Audio('flash_sound.mp3').play(); 
+        });
+
+    </script>
+</body>
+</html>
+
