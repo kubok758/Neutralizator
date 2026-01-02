@@ -21,7 +21,6 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        /* Текст инструкции */
         .instruction {
             margin-bottom: 20px;
             color: #888;
@@ -30,11 +29,11 @@
             opacity: 0.7;
         }
 
-        /* Рисуем Нейрализатор с помощью CSS (можно заменить на картинку <img>) */
         .neuralyzer-container {
             position: relative;
             cursor: pointer;
             transition: transform 0.1s;
+            z-index: 10;
         }
 
         .neuralyzer-container:active {
@@ -87,18 +86,16 @@
             height: 100%;
             background-color: white;
             opacity: 0;
-            pointer-events: none; /* Чтобы клики проходили сквозь */
+            pointer-events: none;
             z-index: 9999;
         }
 
-        /* Анимация пульсации индикатора */
         @keyframes pulse {
             0% { opacity: 0.5; }
             50% { opacity: 1; box-shadow: 0 0 15px red; }
             100% { opacity: 0.5; }
         }
 
-        /* Кнопка запуска (для запроса прав) */
         #permission-btn {
             position: absolute;
             bottom: 20px;
@@ -109,12 +106,13 @@
             border-radius: 5px;
             cursor: pointer;
             font-size: 12px;
+            z-index: 100;
         }
     </style>
 </head>
 <body>
 
-    <div class="instruction">Посмотрите на устройство и нажмите на него...</div>
+    <div class="instruction">Посмотрите сюда...</div>
 
     <div class="neuralyzer-container" id="neuralyzer">
         <div class="stick">
@@ -126,7 +124,6 @@
     </div>
 
     <div id="white-flash"></div>
-
     <button id="permission-btn">Разрешить доступ к вспышке</button>
 
     <script>
@@ -135,76 +132,82 @@
         const bulb = document.getElementById('bulb');
         const permBtn = document.getElementById('permission-btn');
         
+        // --- ЗАГРУЗКА ЗВУКА ---
+        // Создаем объект аудио. Файл должен лежать рядом с HTML.
+        const flashSound = new Audio('Neutralizator.mp3');
+        flashSound.preload = 'auto'; // Предзагрузка, чтобы не было задержки
+
         let videoTrack = null;
 
-        // 1. Функция инициализации камеры (для доступа к фонарику)
+        // Инициализация камеры
         async function initCamera() {
             try {
-                // Запрашиваем доступ к камере (задней)
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: "environment" }
                 });
                 
                 videoTrack = stream.getVideoTracks()[0];
                 
-                // Проверяем, есть ли фонарик
                 const capabilities = videoTrack.getCapabilities();
                 if (!capabilities.torch) {
-                    alert("Вспышка не поддерживается на этом устройстве, но экран мигнет.");
+                    alert("Вспышка не поддерживается, но экран и звук будут работать.");
                     videoTrack = null;
-                } else {
-                    permBtn.style.display = 'none'; // Скрываем кнопку, если права получены
-                    alert("Нейрализатор готов. Нажмите на устройство.");
-                }
+                } 
+                
+                permBtn.style.display = 'none';
+                alert("Устройство готово к работе.");
+
+                // На мобильных устройствах звук нужно разблокировать первым кликом
+                // Мы воспроизводим тишину или ставим на паузу, чтобы активировать AudioContext
+                flashSound.play().then(() => flashSound.pause()).catch(e => {});
 
             } catch (err) {
-                console.error("Ошибка доступа к камере:", err);
-                alert("Не удалось получить доступ к вспышке. Проверьте разрешения сайта и HTTPS.");
+                console.error("Ошибка:", err);
+                alert("Нет доступа к вспышке. Звук и экран будут работать.");
+                permBtn.style.display = 'none'; // Скрываем, даже если ошибка, чтобы не мешала
             }
         }
 
-        // 2. Функция вспышки
+        // Основная функция срабатывания
         async function triggerFlash() {
-            // А. Визуальная вспышка на экране
+            // 1. Воспроизведение звука
+            // Сбрасываем время на 0, чтобы при быстрых кликах звук начинался сначала
+            flashSound.currentTime = 0;
+            flashSound.play().catch(e => console.log("Ошибка воспроизведения звука:", e));
+
+            // 2. Визуальная вспышка (CSS)
             flashOverlay.style.transition = 'none';
             flashOverlay.style.opacity = '1';
             bulb.style.background = '#fff';
             bulb.style.boxShadow = '0 0 50px 20px white';
 
-            // Б. Аппаратная вспышка (фонарик)
+            // 3. Аппаратная вспышка (Torch)
             if (videoTrack) {
                 try {
                     await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
                 } catch (e) { console.error(e); }
             }
 
-            // В. Затухание через короткое время
+            // 4. Выключение через задержку
             setTimeout(async () => {
-                // Выключаем экран
+                // Плавное затухание экрана
                 flashOverlay.style.transition = 'opacity 1.5s ease-out';
                 flashOverlay.style.opacity = '0';
                 
-                // Возвращаем лампочку в норму
                 bulb.style.background = '#300';
                 bulb.style.boxShadow = 'none';
 
-                // Выключаем фонарик
+                // Выключение фонарика
                 if (videoTrack) {
                     try {
                         await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
                     } catch (e) { console.error(e); }
                 }
-            }, 200); // Длительность вспышки 200мс
+            }, 200); 
         }
 
-        // Обработчики событий
         permBtn.addEventListener('click', initCamera);
-        
-        neuralyzer.addEventListener('click', () => {
-            triggerFlash();
-            // Тут можно добавить звук, если есть файл
-            // new Audio('flash_sound.mp3').play(); 
-        });
+        neuralyzer.addEventListener('click', triggerFlash);
 
     </script>
 </body>
